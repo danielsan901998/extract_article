@@ -63,18 +63,27 @@ fn walk(handle: &Handle, article: bool) {
 
 }
 
-fn main() {
-    let path = std::env::args().nth(1).expect("no path given");
-    let dom = parse_document(RcDom::default(), Default::default())
-        .from_utf8()
-        .from_file(path)
-        .unwrap();
-    walk(&dom.document, false);
-
-    if !dom.errors.is_empty() {
-        println!("\nParse errors:");
-        for err in dom.errors.iter() {
-            println!("    {}", err);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>>  {
+    match std::env::args().nth(1) {
+        Some(url) =>{
+            let resp = reqwest::get(url).await.unwrap();
+            let data = resp.text().await.unwrap();
+            let dom = parse_document(RcDom::default(), Default::default())
+                .from_utf8()
+                .read_from(&mut data.as_bytes()).unwrap();
+            walk(&dom.document, true);
+            if !dom.errors.is_empty() {
+                eprintln!("\nParse errors:");
+                for err in dom.errors.iter() {
+                    eprintln!("    {}", err);
+                }
+            }
+            Ok(())
+        },
+        None =>{
+            Ok(())
         }
     }
+
 }
