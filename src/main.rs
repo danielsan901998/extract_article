@@ -9,7 +9,7 @@ fn print_text(handle: &Handle) {
     for child in node.children.borrow().iter() {
         match child.data {
             NodeData::Text { ref contents } => {
-                print!("{}", contents.borrow())
+                print!("{}", contents.borrow().replace('\n'," "))
             },
 
             NodeData::Element {
@@ -27,12 +27,12 @@ fn print_text(handle: &Handle) {
         }
     }
 }
-fn print_p(handle: &Handle) {
+fn println(handle: &Handle) {
     print_text(handle);
     println!("");
 }
 
-fn walk(handle: &Handle, article: bool) {
+fn walk(handle: &Handle, article: bool) -> bool {
     let node = handle;
     let mut article = article;
     match node.data {
@@ -46,21 +46,23 @@ fn walk(handle: &Handle, article: bool) {
             }
             else if article {
                 if string =="p" {
-                    print_p(handle);
-                    return;
+                    println(handle);
+                    return article;
                 }
                 else if string =="pre" {
-                    print_p(handle);
-                    return;
+                    println(handle);
+                    return article;
                 }
             }
         },
             _ => {},
     }
     for child in node.children.borrow().iter() {
-        walk(child,article);
+        if walk(child,article){
+            article=true;
+        }
     }
-
+    article
 }
 
 #[tokio::main]
@@ -72,7 +74,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
             let dom = parse_document(RcDom::default(), Default::default())
                 .from_utf8()
                 .read_from(&mut data.as_bytes()).unwrap();
-            walk(&dom.document, true);
+            let article_found=walk(&dom.document, false);
+            if !article_found {
+                walk(&dom.document, true);
+            }
             if !dom.errors.is_empty() {
                 eprintln!("\nParse errors:");
                 for err in dom.errors.iter() {
