@@ -32,6 +32,29 @@ fn print_element(handle: &Handle) {
     print_text(handle);
     println!("");
 }
+fn print_pre(handle: &Handle) {
+    let node = handle;
+    for child in node.children.borrow().iter() {
+        match child.data {
+            NodeData::Text { ref contents } => {
+                print!("{}", contents.borrow())
+            },
+
+            NodeData::Element {
+                ref name,
+                ..
+            } => {
+                let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
+                if string =="br" {
+                    println!("");
+                }else{
+                    print_pre(child);
+                }
+            },
+                _ => {},
+        }
+    }
+}
 fn print_table(handle: &Handle) {
     let node = handle;
     for child in node.children.borrow().iter() {
@@ -126,11 +149,16 @@ fn walk(handle: &Handle, article: bool) -> bool {
                 article = true;
             }
             else if article {
-                if string == "p" || string == "pre" {
+                if string == "p" {
                     print_element(handle);
                     return article;
                 }
-                else if string =="ol" {
+                else if string == "pre" {
+                    print_pre(handle);
+                    println!("");
+                    return article;
+                }
+                else if string == "ol" {
                     let mut reversed = false;
                     let mut start = 1;
                     for attr in attrs.borrow().iter() {
@@ -145,11 +173,11 @@ fn walk(handle: &Handle, article: bool) -> bool {
                     print_ol(handle, start, reversed);
                     return article;
                 }
-                else if string =="ul" {
+                else if string == "ul" {
                     print_ul(handle);
                     return article;
                 }
-                else if string =="table" {
+                else if string == "table" {
                     print_table(handle);
                     return article;
                 }
