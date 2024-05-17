@@ -137,7 +137,7 @@ fn walk(handle: &Handle, article: bool) -> bool {
     let mut article = article;
     match node.data {
         NodeData::Document => {
-            walk_children(node,article);
+            walk_children(node,article)
         },
         NodeData::Element {
             ref name,
@@ -182,13 +182,10 @@ fn walk(handle: &Handle, article: bool) -> bool {
                     return article;
                 }
             }
-            if walk_children(node,article) {
-                article=true;
-            }
+            walk_children(node,article)
         },
-            _ => {},
+            _ => {article},
     }
-    article
 }
 
 #[tokio::main]
