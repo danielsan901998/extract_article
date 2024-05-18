@@ -9,7 +9,7 @@ fn print_text(handle: &Handle) {
     for child in node.children.borrow().iter() {
         match child.data {
             NodeData::Text { ref contents } => {
-                print!("{}", contents.borrow().replace('\n'," "))
+                print!("{}", contents.borrow().replace('\n'," "));
             },
 
             NodeData::Element {
@@ -37,7 +37,7 @@ fn print_pre(handle: &Handle) {
     for child in node.children.borrow().iter() {
         match child.data {
             NodeData::Text { ref contents } => {
-                print!("{}", contents.borrow())
+                print!("{}", contents.borrow());
             },
 
             NodeData::Element {
@@ -179,6 +179,10 @@ fn walk(handle: &Handle, article: bool) -> bool {
                 }
                 else if string == "table" {
                     print_table(handle);
+                    return article;
+                }
+                else if string.starts_with('h') && string.len()==2 {
+                    print_element(handle);
                     return article;
                 }
             }
