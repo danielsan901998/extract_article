@@ -112,7 +112,7 @@ fn print_ol(handle: &Handle, start: i32, reversed: bool) {
                         pos=pos-1;
                     }
                     else{
-                        pos=pos-1;
+                        pos=pos+1;
                     }
                 }
             }
