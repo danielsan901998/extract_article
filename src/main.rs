@@ -205,12 +205,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
             if !article_found {
                 walk(&dom.document, true);
             }
-            if !dom.errors.is_empty() {
-                eprintln!("\nParse errors:");
-                for err in dom.errors.iter() {
-                    eprintln!("    {}", err);
-                }
-            }
             Ok(())
         },
         None =>{
