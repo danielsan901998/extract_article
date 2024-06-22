@@ -139,6 +139,16 @@ fn walk(handle: &Handle, article: bool) -> bool {
         NodeData::Document => {
             walk_children(node,article)
         },
+        NodeData::Text { ref contents } => {
+            if article {
+                let text = contents.borrow().replace('\n'," ");
+                let text = text.trim();
+                if !text.is_empty() {
+                    println!("{}",text);
+                }
+            }
+            article
+        },
         NodeData::Element {
             ref name,
             ref attrs,
@@ -147,6 +157,12 @@ fn walk(handle: &Handle, article: bool) -> bool {
             let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
             if string =="article" {
                 article = true;
+            }
+            else if string == "head" {
+                return article;
+            }
+            else if string == "script" {
+                return article;
             }
             else if article {
                 if string == "p" {
