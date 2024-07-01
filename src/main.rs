@@ -3,6 +3,7 @@ extern crate markup5ever_rcdom as rcdom;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use rcdom::{Handle, NodeData, RcDom};
+use std::cell::RefCell;
 
 struct HtmlWalker<'a> {
     found_article: bool,
@@ -47,7 +48,7 @@ impl<'a> HtmlWalker<'a> {
                 if name == "head" || name == "script" {
                     return;
                 }
-                else if name =="article" {
+                else if is_article(name,attrs){
                     self.found_article = true;
                 }
                 else if self.found_article {
@@ -93,6 +94,25 @@ impl<'a> HtmlWalker<'a> {
                 _ => {},
         }
     }
+}
+
+fn is_article(name : &str,attrs : &RefCell<Vec<html5ever::Attribute>>) -> bool {
+    if name == "article" {
+        return true;
+    }
+    if name == "div" {
+        for attr in attrs.borrow().iter() {
+            let name = std::str::from_utf8(attr.name.local.as_bytes()).unwrap();
+            if name == "class" {
+                let value = std::str::from_utf8(attr.value.as_bytes()).unwrap();
+                if value == "post hentry" || value == "post-content" {
+                    return true;
+                }
+
+            }
+        }
+    }
+    false
 }
 
 fn print_text(handle: &Handle) {
