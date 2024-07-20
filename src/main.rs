@@ -4,17 +4,24 @@ use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use rcdom::{Handle, NodeData, RcDom};
 use std::cell::RefCell;
+use std::collections::HashSet;
 
 struct HtmlWalker<'a> {
     found_article: bool,
     handle: &'a Handle,
+    ignore_elements: HashSet<String>,
 }
 
 impl<'a> HtmlWalker<'a> {
     fn new(handle: &'a Handle) -> Self {
+        let mut ignore_elements = HashSet::new();
+        ignore_elements.insert("head".to_string());
+        ignore_elements.insert("script".to_string());
+        ignore_elements.insert("style".to_string());
         HtmlWalker {
             found_article: false,
             handle,
+            ignore_elements,
         }
     }
 
@@ -46,18 +53,17 @@ impl<'a> HtmlWalker<'a> {
                 ..
             } => {
                 let name = std::str::from_utf8(name.local.as_bytes()).unwrap();
-                if name == "head" || name == "script" {
+                if self.ignore_elements.contains(name) {
                     return;
                 } else if is_article(name, attrs) {
                     self.found_article = true;
+                    self.walk_children(node)
                 } else if self.found_article {
                     if name == "p" {
-                        print_element(node);
-                        return;
+                        self.print_element(node);
                     } else if name == "pre" {
-                        print_pre(node);
+                        self.print_pre(node);
                         println!();
-                        return;
                     } else if name == "ol" {
                         let mut reversed = false;
                         let mut start = 1;
@@ -70,22 +76,113 @@ impl<'a> HtmlWalker<'a> {
                                 start = value.parse::<i32>().unwrap();
                             }
                         }
-                        print_ol(node, start, reversed);
-                        return;
+                        self.print_ol(node, start, reversed);
                     } else if name == "ul" {
-                        print_ul(node);
-                        return;
+                        self.print_ul(node);
                     } else if name == "table" {
-                        print_table(node);
-                        return;
+                        self.print_table(node);
                     } else if name.starts_with('h') && name.len() == 2 {
-                        print_element(node);
-                        return;
+                        self.print_element(node);
+                    } else {
+                        self.walk_children(node);
                     }
+                } else {
+                    self.walk_children(node)
                 }
-                self.walk_children(node)
             }
             _ => {}
+        }
+    }
+    fn print_text(&self, handle: &Handle) {
+        let node = handle;
+        for child in node.children.borrow().iter() {
+            match child.data {
+                NodeData::Text { ref contents } => {
+                    print!("{}", contents.borrow().replace('\n', " "));
+                }
+
+                NodeData::Element { ref name, .. } => {
+                    let name = std::str::from_utf8(name.local.as_bytes()).unwrap();
+                    if self.ignore_elements.contains(name) {
+                        return;
+                    } else if name == "br" {
+                        println!();
+                    } else {
+                        self.print_text(child);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn print_element(&self, handle: &Handle) {
+        self.print_text(handle);
+        println!();
+    }
+    fn print_pre(&self, handle: &Handle) {
+        let node = handle;
+        for child in node.children.borrow().iter() {
+            match child.data {
+                NodeData::Text { ref contents } => {
+                    print!("{}", contents.borrow());
+                }
+
+                NodeData::Element { ref name, .. } => {
+                    let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
+                    if string == "br" {
+                        println!();
+                    } else {
+                        self.print_pre(child);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    fn print_table(&self, handle: &Handle) {
+        let node = handle;
+        for child in node.children.borrow().iter() {
+            if let NodeData::Element { ref name, .. } = child.data {
+                let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
+                if string == "tr" {
+                    self.print_table(child);
+                    println!();
+                } else if string == "th" || string == "td" {
+                    print!("\t");
+                    self.print_text(child);
+                } else {
+                    self.print_table(child);
+                }
+            }
+        }
+    }
+    fn print_ul(&self, handle: &Handle) {
+        for child in handle.children.borrow().iter() {
+            if let NodeData::Element { ref name, .. } = child.data {
+                let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
+                if string == "li" {
+                    print!("• ");
+                    self.print_element(child);
+                }
+            }
+        }
+    }
+    fn print_ol(&self, handle: &Handle, start: i32, reversed: bool) {
+        let mut pos = start;
+        for child in handle.children.borrow().iter() {
+            if let NodeData::Element { ref name, .. } = child.data {
+                let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
+                if string == "li" {
+                    print!("{}. ", pos);
+                    self.print_element(child);
+                    if reversed {
+                        pos -= 1;
+                    } else {
+                        pos += 1;
+                    }
+                }
+            }
         }
     }
 }
@@ -106,97 +203,6 @@ fn is_article(name: &str, attrs: &RefCell<Vec<html5ever::Attribute>>) -> bool {
         }
     }
     false
-}
-
-fn print_text(handle: &Handle) {
-    let node = handle;
-    for child in node.children.borrow().iter() {
-        match child.data {
-            NodeData::Text { ref contents } => {
-                print!("{}", contents.borrow().replace('\n', " "));
-            }
-
-            NodeData::Element { ref name, .. } => {
-                let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
-                if string == "br" {
-                    println!();
-                } else {
-                    print_text(child);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn print_element(handle: &Handle) {
-    print_text(handle);
-    println!();
-}
-fn print_pre(handle: &Handle) {
-    let node = handle;
-    for child in node.children.borrow().iter() {
-        match child.data {
-            NodeData::Text { ref contents } => {
-                print!("{}", contents.borrow());
-            }
-
-            NodeData::Element { ref name, .. } => {
-                let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
-                if string == "br" {
-                    println!();
-                } else {
-                    print_pre(child);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-fn print_table(handle: &Handle) {
-    let node = handle;
-    for child in node.children.borrow().iter() {
-        if let NodeData::Element { ref name, .. } = child.data {
-            let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
-            if string == "tr" {
-                print_table(child);
-                println!();
-            } else if string == "th" || string == "td" {
-                print!("\t");
-                print_text(child);
-            } else {
-                print_table(child);
-            }
-        }
-    }
-}
-fn print_ul(handle: &Handle) {
-    for child in handle.children.borrow().iter() {
-        if let NodeData::Element { ref name, .. } = child.data {
-            let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
-            if string == "li" {
-                print!("• ");
-                print_element(child);
-            }
-        }
-    }
-}
-fn print_ol(handle: &Handle, start: i32, reversed: bool) {
-    let mut pos = start;
-    for child in handle.children.borrow().iter() {
-        if let NodeData::Element { ref name, .. } = child.data {
-            let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
-            if string == "li" {
-                print!("{}. ", pos);
-                print_element(child);
-                if reversed {
-                    pos -= 1;
-                } else {
-                    pos += 1;
-                }
-            }
-        }
-    }
 }
 
 #[tokio::main]
