@@ -55,42 +55,50 @@ impl<'a> HtmlWalker<'a> {
                 let name = std::str::from_utf8(name.local.as_bytes()).unwrap();
                 if self.ignore_elements.contains(name) {
                     return;
-                } else if is_article(name, attrs) {
-                    self.found_article = true;
-                    self.walk_children(node)
-                } else if self.found_article {
-                    if name == "p" {
-                        self.print_element(node);
-                    } else if name == "pre" {
-                        self.print_pre(node);
-                        println!();
-                    } else if name == "ol" {
-                        let mut reversed = false;
-                        let mut start = 1;
-                        for attr in attrs.borrow().iter() {
-                            let name = std::str::from_utf8(attr.name.local.as_bytes()).unwrap();
-                            if name == "reversed" {
-                                reversed = true;
-                            } else if name == "start" {
-                                let value = std::str::from_utf8(attr.value.as_bytes()).unwrap();
-                                start = value.parse::<i32>().unwrap();
-                            }
-                        }
-                        self.print_ol(node, start, reversed);
-                    } else if name == "ul" {
-                        self.print_ul(node);
-                    } else if name == "table" {
-                        self.print_table(node);
-                    } else if name.starts_with('h') && name.len() == 2 {
-                        self.print_element(node);
-                    } else {
-                        self.walk_children(node);
-                    }
-                } else {
-                    self.walk_children(node)
                 }
+
+                self.handle_element(name, attrs, node);
             }
             _ => {}
+        }
+    }
+    fn handle_element(
+        &mut self,
+        name: &str,
+        attrs: &RefCell<Vec<html5ever::Attribute>>,
+        node: &Handle,
+    ) {
+        if is_article(name, attrs) {
+            self.found_article = true;
+            self.walk_children(node);
+        } else if self.found_article {
+            match name {
+                "p" => self.print_element(node),
+                "pre" => {
+                    self.print_pre(node);
+                    println!();
+                }
+                "ol" => {
+                    let mut reversed = false;
+                    let mut start = 1;
+                    for attr in attrs.borrow().iter() {
+                        let name = std::str::from_utf8(attr.name.local.as_bytes()).unwrap();
+                        if name == "reversed" {
+                            reversed = true;
+                        } else if name == "start" {
+                            let value = std::str::from_utf8(attr.value.as_bytes()).unwrap();
+                            start = value.parse::<i32>().unwrap();
+                        }
+                    }
+                    self.print_ol(node, start, reversed);
+                }
+                "ul" => self.print_ul(node),
+                "table" => self.print_table(node),
+                _ if name.starts_with('h') && name.len() == 2 => self.print_element(node),
+                _ => self.walk_children(node),
+            }
+        } else {
+            self.walk_children(node);
         }
     }
     fn print_text(&self, handle: &Handle) {
