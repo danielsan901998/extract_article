@@ -1,7 +1,6 @@
 extern crate markup5ever_rcdom as rcdom;
 
-use html5ever::parse_document;
-use html5ever::tendril::TendrilSink;
+use html5ever::{parse_document,ParseOpts,tendril::TendrilSink};
 use rcdom::{Handle, NodeData, RcDom};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -219,7 +218,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(url) => {
             let resp = reqwest::get(url).await.unwrap();
             let data = resp.text().await.unwrap();
-            let dom = parse_document(RcDom::default(), Default::default())
+            let mut opts: ParseOpts = Default::default();
+            opts.tree_builder.scripting_enabled = false;
+            let dom = parse_document(RcDom::default(), opts)
                 .from_utf8()
                 .read_from(&mut data.as_bytes())
                 .unwrap();
