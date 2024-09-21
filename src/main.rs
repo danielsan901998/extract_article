@@ -10,7 +10,7 @@ struct HtmlWalker<'a> {
     handle: &'a Handle,
     ignore_elements: HashSet<String>,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum State {
     Search,
     P,
@@ -87,12 +87,16 @@ impl<'a> HtmlWalker<'a> {
         node: &Handle,
         state: State,
     ) {
+        if state!=State::Search && self.ignore_elements.contains(name) {
+            return;
+        }
         if is_article(name, attrs) {
             self.found_article = true;
             self.walk_children(node, state);
         } else if self.found_article {
             match name {
                 "p" => self.print_element(node, State::P),
+                "br" => println!(),
                 "pre" => {
                     self.print_pre(node);
                     println!();
@@ -131,9 +135,6 @@ impl<'a> HtmlWalker<'a> {
                 ref attrs,
                 .. } => {
                     let name = std::str::from_utf8(name.local.as_bytes()).unwrap();
-                    if self.ignore_elements.contains(name) {
-                        return;
-                    }
                     self.handle_element(name, attrs, child, e);
                 }
                 _ => {}
