@@ -1,7 +1,5 @@
-extern crate markup5ever_rcdom as rcdom;
-
 use html5ever::{parse_document, tendril::TendrilSink, ParseOpts};
-use rcdom::{Handle, NodeData, RcDom};
+use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fs;
