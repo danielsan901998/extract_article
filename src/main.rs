@@ -3,15 +3,15 @@ use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fs;
-use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::fmt::Write;
+use clap::Parser;
 
-struct HtmlWalker<'a, W: Write> {
+struct HtmlWalker<'a> {
     found_article: bool,
     title: String,
     ignore_elements: HashSet<String>,
     handle: &'a Handle,
-    writer: &'a mut BufWriter<W>,
+    buffer: &'a mut String,
 }
 #[derive(Clone, Copy, PartialEq)]
 enum State {
@@ -24,8 +24,8 @@ enum State {
     Table,
 }
 
-impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
-    fn new(handle: &'a Handle, writer: &'a mut BufWriter<W>) -> Self {
+impl<'a> HtmlWalker<'a> {
+    fn new(handle: &'a Handle, buffer: &'a mut String) -> Self {
         let mut ignore_elements = HashSet::new();
         let title = String::new();
         ignore_elements.insert("link".to_string());
@@ -37,7 +37,7 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
             title,
             ignore_elements,
             handle,
-            writer,
+            buffer,
         }
     }
 
@@ -60,19 +60,19 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
                         let text = contents.borrow().replace('\n', " ");
                         let text = text.trim();
                         if !text.is_empty() {
-                            writeln!(self.writer, "{}", text).expect("buffer overflow");
+                            writeln!(self.buffer, "{}", text).expect("buffer overflow");
                         }
                     }
                 }
                 State::Title => {
-                    self.title = contents.borrow().clone().into();
+                    self.title = contents.borrow().clone().trim().into();
                     //no longer needed to look into head elements
                     self.ignore_elements.insert("head".to_string());
                 }
                 State::Pre => {
-                    write!(self.writer, "{}", contents.borrow()).expect("buffer overflow")
+                    write!(self.buffer, "{}", contents.borrow()).expect("buffer overflow")
                 }
-                _ => write!(self.writer, "{}", contents.borrow().replace('\n', " "))
+                _ => write!(self.buffer, "{}", contents.borrow().replace('\n', " "))
                     .expect("buffer overflow"),
             },
             NodeData::Element {
@@ -102,10 +102,10 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
         } else if self.found_article {
             match name {
                 "p" => self.print_element(node, State::P),
-                "br" => writeln!(self.writer).expect("buffer overflow"),
+                "br" => writeln!(self.buffer).expect("buffer overflow"),
                 "pre" => {
                     self.print_pre(node);
-                    writeln!(self.writer).expect("buffer overflow");
+                    writeln!(self.buffer).expect("buffer overflow");
                 }
                 "ol" => {
                     let mut reversed = false;
@@ -137,7 +137,7 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
         for child in handle.children.borrow().iter() {
             match child.data {
                 NodeData::Text { ref contents } => {
-                    write!(self.writer, "{}", contents.borrow().replace('\n', " "))
+                    write!(self.buffer, "{}", contents.borrow().replace('\n', " "))
                         .expect("buffer overflow");
                 }
 
@@ -156,13 +156,13 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
 
     fn print_element(&mut self, handle: &Handle, e: State) {
         self.print_text(handle, e);
-        writeln!(self.writer).expect("buffer overflow");
+        writeln!(self.buffer).expect("buffer overflow");
     }
     fn print_pre(&mut self, handle: &Handle) {
         for child in handle.children.borrow().iter() {
             match child.data {
                 NodeData::Text { ref contents } => {
-                    write!(self.writer, "{}", contents.borrow()).expect("buffer overflow");
+                    write!(self.buffer, "{}", contents.borrow()).expect("buffer overflow");
                 }
 
                 NodeData::Element {
@@ -172,7 +172,7 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
                 } => {
                     let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
                     if string == "br" {
-                        writeln!(self.writer).expect("buffer overflow");
+                        writeln!(self.buffer).expect("buffer overflow");
                     } else {
                         self.handle_element(string, attrs, child, State::Pre);
                     }
@@ -187,9 +187,9 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
                 let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
                 if string == "tr" {
                     self.print_table(child);
-                    writeln!(self.writer).expect("buffer overflow");
+                    writeln!(self.buffer).expect("buffer overflow");
                 } else if string == "th" || string == "td" {
-                    write!(self.writer, "\t").expect("buffer overflow");
+                    write!(self.buffer, "\t").expect("buffer overflow");
                     self.print_text(child, State::Table);
                 } else {
                     self.print_table(child);
@@ -202,7 +202,7 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
             if let NodeData::Element { ref name, .. } = child.data {
                 let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
                 if string == "li" {
-                    write!(self.writer, "• ").expect("buffer overflow");
+                    write!(self.buffer, "• ").expect("buffer overflow");
                     self.print_element(child, State::Ul);
                 }
             }
@@ -214,7 +214,7 @@ impl<'a, W: std::io::Write> HtmlWalker<'a, W> {
             if let NodeData::Element { ref name, .. } = child.data {
                 let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
                 if string == "li" {
-                    write!(self.writer, "{}. ", pos).expect("buffer overflow");
+                    write!(self.buffer, "{}. ", pos).expect("buffer overflow");
                     self.print_element(child, State::Ol);
                     if reversed {
                         pos -= 1;
@@ -245,33 +245,48 @@ fn is_article(name: &str, attrs: &RefCell<Vec<html5ever::Attribute>>) -> bool {
     false
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// url of the website to extract article
+    url: String,
+
+    /// define it to download the article to a file
+    #[arg(short, long, default_value_t = false)]
+    download: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    match std::env::args().nth(1) {
-        Some(url) => {
-            let resp = reqwest::get(url).await.unwrap();
-            let data = resp.text().await.unwrap();
-            let mut opts: ParseOpts = Default::default();
-            opts.tree_builder.scripting_enabled = false;
-            let dom = parse_document(RcDom::default(), opts)
-                .from_utf8()
-                .read_from(&mut data.as_bytes())
-                .unwrap();
-            let mut writer =
-                BufWriter::new(File::create("/tmp/article.txt").expect("error creating file"));
-            let mut walker = HtmlWalker::new(&dom.document, &mut writer);
-            walker.walk();
-            if !walker.found_article {
-                walker.found_article = true;
-                walker.walk();
-            }
-            if !walker.title.is_empty() {
-                let filename = String::from("/tmp/") + &walker.title + ".txt";
-                fs::rename("/tmp/article.txt", &filename)
-                    .unwrap_or_else(|_| panic!("error renaming article.txt to {}", filename));
-            }
-            Ok(())
-        }
-        None => Ok(()),
+    let args = Args::parse();
+    let resp = reqwest::get(args.url).await.unwrap();
+    let data = resp.text().await.unwrap();
+    let mut opts: ParseOpts = Default::default();
+    opts.tree_builder.scripting_enabled = false;
+    let dom = parse_document(RcDom::default(), opts)
+        .from_utf8()
+        .read_from(&mut data.as_bytes())
+        .unwrap();
+    let mut buffer = String::new();
+    let mut walker = HtmlWalker::new(&dom.document, &mut buffer);
+    if args.download {
+        //no need to look into head elements
+        walker.ignore_elements.insert("head".to_string());
     }
-}
+    walker.walk();
+    if !walker.found_article {
+        walker.found_article = true;
+        walker.walk();
+    }
+    if args.download {
+        let filename = if walker.title.is_empty(){
+            String::from("/tmp/article.txt")
+        }else{
+            String::from("/tmp/") + &walker.title + ".txt"
+        };
+        fs::write(filename, buffer).expect("Unable to write file");
+    }else{
+        println!("{}",buffer);
+    }
+    Ok(())
+ }
