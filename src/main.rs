@@ -1,10 +1,81 @@
+use clap::Parser;
 use html5ever::{parse_document, tendril::TendrilSink, ParseOpts};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::fs;
 use std::fmt::Write;
-use clap::Parser;
+use std::fs;
+
+#[derive(Debug, PartialEq)]
+enum SimpleSelector {
+    Tag(String),
+    Class(String),
+    Id(String),
+}
+
+struct SimpleSelectorParser {
+    input: String,
+    position: usize,
+}
+
+impl SimpleSelectorParser {
+    fn new(input: &str) -> Self {
+        SimpleSelectorParser {
+            input: input.to_string(),
+            position: 0,
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.input.chars().nth(self.position)
+    }
+
+    fn consume(&mut self) -> Option<char> {
+        let current = self.peek();
+        self.position += 1;
+        current
+    }
+
+    fn consume_identifier(&mut self) -> String {
+        let mut identifier = String::new();
+        while let Some(c) = self.peek() {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                identifier.push(self.consume().unwrap());
+            } else {
+                break;
+            }
+        }
+        identifier
+    }
+
+    fn parse(&mut self) -> Option<SimpleSelector> {
+        match self.peek() {
+            Some('.') => {
+                self.consume();
+                Some(SimpleSelector::Class(self.consume_identifier()))
+            }
+            Some('#') => {
+                self.consume();
+                Some(SimpleSelector::Id(self.consume_identifier()))
+            }
+            Some(c) if c.is_alphabetic() => Some(SimpleSelector::Tag(self.consume_identifier())),
+            _ => None,
+        }
+    }
+}
+
+fn find_attr(attrs: &RefCell<Vec<html5ever::Attribute>>, name: &str, value: &str) -> bool {
+    for attr in attrs.borrow().iter() {
+        let n = std::str::from_utf8(attr.name.local.as_bytes()).unwrap();
+        if name == n {
+            let v = std::str::from_utf8(attr.value.as_bytes()).unwrap();
+            if value == v {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 struct HtmlWalker<'a> {
     found_article: bool,
@@ -12,6 +83,7 @@ struct HtmlWalker<'a> {
     ignore_elements: HashSet<String>,
     handle: &'a Handle,
     buffer: &'a mut String,
+    selector: SimpleSelector,
 }
 #[derive(Clone, Copy, PartialEq)]
 enum State {
@@ -25,7 +97,7 @@ enum State {
 }
 
 impl<'a> HtmlWalker<'a> {
-    fn new(handle: &'a Handle, buffer: &'a mut String) -> Self {
+    fn new(handle: &'a Handle, buffer: &'a mut String, selector: SimpleSelector) -> Self {
         let mut ignore_elements = HashSet::new();
         let title = String::new();
         ignore_elements.insert("link".to_string());
@@ -38,6 +110,7 @@ impl<'a> HtmlWalker<'a> {
             ignore_elements,
             handle,
             buffer,
+            selector,
         }
     }
 
@@ -96,9 +169,10 @@ impl<'a> HtmlWalker<'a> {
         if self.ignore_elements.contains(name) {
             return;
         }
-        if is_article(name, attrs) {
+        if self.is_article(name, attrs) {
             self.found_article = true;
             self.walk_children(node, state);
+            self.found_article = false;
         } else if self.found_article {
             match name {
                 "p" => self.print_element(node, State::P),
@@ -131,6 +205,13 @@ impl<'a> HtmlWalker<'a> {
                 "title" => self.walk_children(node, State::Title),
                 _ => self.walk_children(node, state),
             }
+        }
+    }
+    fn is_article(&mut self, name: &str, attrs: &RefCell<Vec<html5ever::Attribute>>) -> bool {
+        match self.selector {
+            SimpleSelector::Id(ref e) => find_attr(attrs, "id", e),
+            SimpleSelector::Class(ref e) => find_attr(attrs, "class", e),
+            SimpleSelector::Tag(ref e) => name == e,
         }
     }
     fn print_text(&mut self, handle: &Handle, e: State) {
@@ -227,29 +308,15 @@ impl<'a> HtmlWalker<'a> {
     }
 }
 
-fn is_article(name: &str, attrs: &RefCell<Vec<html5ever::Attribute>>) -> bool {
-    if name == "article" {
-        return true;
-    }
-    if name == "div" {
-        for attr in attrs.borrow().iter() {
-            let name = std::str::from_utf8(attr.name.local.as_bytes()).unwrap();
-            if name == "class" {
-                let value = std::str::from_utf8(attr.value.as_bytes()).unwrap();
-                if value == "post hentry" || value == "post-content" {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct Args {
+struct Args  {
     /// url of the website to extract article
     url: String,
+
+    /// css selector to find article
+    #[arg(short, long, default_value = "body")]
+    selector: String,
 
     /// define it to download the article to a file
     #[arg(short, long, default_value_t = false)]
@@ -259,6 +326,8 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let selector = SimpleSelectorParser::new(&args.selector).parse()
+        .expect(format!("Could not parse css selector '{}'", args.selector).as_str());
     let resp = reqwest::get(args.url).await.unwrap();
     let data = resp.text().await.unwrap();
     let mut opts: ParseOpts = Default::default();
@@ -268,25 +337,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .read_from(&mut data.as_bytes())
         .unwrap();
     let mut buffer = String::new();
-    let mut walker = HtmlWalker::new(&dom.document, &mut buffer);
-    if args.download {
+    let mut walker = HtmlWalker::new(&dom.document, &mut buffer, selector);
+    if !args.download {
         //no need to look into head elements
         walker.ignore_elements.insert("head".to_string());
     }
     walker.walk();
-    if !walker.found_article {
-        walker.found_article = true;
-        walker.walk();
-    }
     if args.download {
-        let filename = if walker.title.is_empty(){
+        let filename = if walker.title.is_empty() {
             String::from("/tmp/article.txt")
-        }else{
+        } else {
             String::from("/tmp/") + &walker.title + ".txt"
         };
-        fs::write(filename, buffer).expect("Unable to write file");
-    }else{
-        println!("{}",buffer);
+        fs::write(&filename, buffer).expect(format!("Unable to write file '{}'", &filename).as_str());
+    } else {
+        println!("{}", buffer);
     }
     Ok(())
- }
+}
