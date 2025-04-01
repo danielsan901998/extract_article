@@ -1,8 +1,27 @@
 use clap::Parser;
-use std::fs;
+use dirs;
+use extract_article::{HtmlWalker, SimpleSelectorParser};
 use html5ever::{parse_document, tendril::TendrilSink, ParseOpts};
 use markup5ever_rcdom::RcDom;
-use extract_article::{HtmlWalker, SimpleSelectorParser};
+use serde::Deserialize;
+use serde_json;
+use std::fs;
+
+#[derive(Deserialize, Debug)]
+struct ConfigItem {
+    url: String,
+    selector: String,
+}
+
+fn load_config() -> Result<Vec<ConfigItem>, Box<dyn std::error::Error>> {
+    let config_dir = dirs::config_dir().ok_or("Could not find config directory")?;
+    let config_path = config_dir.join("extract_article/config.json");
+
+    let config_contents = fs::read_to_string(config_path)?;
+    let config: Vec<ConfigItem> = serde_json::from_str(&config_contents)?;
+
+    Ok(config)
+}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -22,8 +41,16 @@ struct Args  {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let selector = SimpleSelectorParser::new(&args.selector).parse()
+    let mut selector = SimpleSelectorParser::new(&args.selector).parse()
         .expect(format!("Could not parse css selector '{}'", args.selector).as_str());
+    if let Ok(config) = load_config() {
+        for item in config.iter(){
+            if args.url.contains(&item.url)  {
+                selector = SimpleSelectorParser::new(&item.selector).parse()
+                    .expect(format!("Could not parse css selector '{}'", args.selector).as_str());
+            }
+        };
+    }
     let resp = reqwest::get(args.url).await.unwrap();
     let data = resp.text().await.unwrap();
     let mut opts: ParseOpts = Default::default();
