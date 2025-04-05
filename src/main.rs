@@ -7,6 +7,13 @@ use serde::Deserialize;
 use serde_json;
 use std::fs;
 
+fn strip_trailing_newline(input: &str) -> &str {
+    input
+        .strip_suffix("\r\n")
+        .or(input.strip_suffix("\n"))
+        .unwrap_or(input)
+}
+
 #[derive(Deserialize, Debug)]
 struct ConfigItem {
     url: String,
@@ -62,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer = String::new();
     let mut walker = HtmlWalker::new(&dom.document, &mut buffer, selector);
     if !args.download {
-        //no need to look into head elements
+        //no need to look into head elements to find title
         walker.ignore_elements.insert("head".to_string());
     }
     walker.walk();
@@ -72,9 +79,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             String::from("/tmp/") + &walker.title + ".txt"
         };
-        fs::write(&filename, buffer).expect(format!("Unable to write file '{}'", &filename).as_str());
+        fs::write(&filename, strip_trailing_newline(&buffer)).expect(format!("Unable to write file '{}'", &filename).as_str());
     } else {
-        println!("{}", buffer);
+        println!("{}", strip_trailing_newline(&buffer));
     }
     Ok(())
 }
