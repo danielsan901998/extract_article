@@ -25,7 +25,7 @@ fn load_config() -> Result<Vec<ConfigItem>, Box<dyn std::error::Error>> {
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct Args  {
+struct Args {
     /// url of the website to extract article
     url: String,
 
@@ -41,15 +41,17 @@ struct Args  {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let mut selector = SimpleSelectorParser::new(&args.selector).parse()
+    let mut selector = SimpleSelectorParser::new(&args.selector)
+        .parse()
         .expect(format!("Could not parse css selector '{}'", args.selector).as_str());
     if let Ok(config) = load_config() {
-        for item in config.iter(){
-            if args.url.contains(&item.url)  {
-                selector = SimpleSelectorParser::new(&item.selector).parse()
+        for item in config.iter() {
+            if args.url.contains(&item.url) {
+                selector = SimpleSelectorParser::new(&item.selector)
+                    .parse()
                     .expect(format!("Could not parse css selector '{}'", args.selector).as_str());
             }
-        };
+        }
     }
     let resp = reqwest::get(args.url).await.unwrap();
     let data = resp.text().await.unwrap();
@@ -72,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             String::from("/tmp/") + &walker.title + ".txt"
         };
-        fs::write(&filename, buffer).expect(format!("Unable to write file '{}'", &filename).as_str());
+        fs::write(&filename, buffer)
+            .expect(format!("Unable to write file '{}'", &filename).as_str());
     } else {
         println!("{}", buffer);
     }
