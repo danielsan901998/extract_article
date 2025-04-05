@@ -207,7 +207,7 @@ impl<'a> HtmlWalker<'a> {
                     }
                 }
             }
-            _ => {}
+            _ => self.walk_children(node, state)
         }
     }
     fn is_article(&mut self, name: &str, attrs: &RefCell<Vec<html5ever::Attribute>>) -> bool {
