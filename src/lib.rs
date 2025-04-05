@@ -36,7 +36,7 @@ impl SimpleSelectorParser {
     fn consume_identifier(&mut self) -> String {
         let mut identifier = String::new();
         while let Some(c) = self.peek() {
-            if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
                 identifier.push(self.consume().unwrap());
             } else {
                 break;
@@ -61,17 +61,18 @@ impl SimpleSelectorParser {
     }
 }
 
+fn find_word_in_string(text: &str, word_to_find: &str) -> bool {
+    text.split_whitespace().any(|word| word == word_to_find)
+}
+
 fn find_attr(attrs: &RefCell<Vec<html5ever::Attribute>>, name: &str, value: &str) -> bool {
-    for attr in attrs.borrow().iter() {
-        let n = std::str::from_utf8(attr.name.local.as_bytes()).unwrap();
-        if name == n {
-            let v = std::str::from_utf8(attr.value.as_bytes()).unwrap();
-            if value == v {
-                return true;
-            }
-        }
-    }
-    false
+    attrs.borrow().iter().any(|attr| {
+        std::str::from_utf8(attr.name.local.as_bytes()).map_or(false, |n| {
+            name == n
+                && std::str::from_utf8(attr.value.as_bytes())
+                    .map_or(false, |v| find_word_in_string(v, value))
+        })
+    })
 }
 
 pub struct HtmlWalker<'a> {
@@ -85,6 +86,7 @@ pub struct HtmlWalker<'a> {
 #[derive(Clone, Copy, PartialEq)]
 enum State {
     Search,
+    Article,
     Title,
     P,
     Pre,
@@ -125,13 +127,11 @@ impl<'a> HtmlWalker<'a> {
         match node.data {
             NodeData::Document => self.walk_children(node, e),
             NodeData::Text { ref contents } => match e {
-                State::Search => {
-                    if self.found_article {
-                        let text = contents.borrow().replace('\n', " ");
-                        let text = text.trim();
-                        if !text.is_empty() {
-                            writeln!(self.buffer, "{}", text).expect("buffer overflow");
-                        }
+                State::Article => {
+                    let text = contents.borrow().replace('\n', " ");
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        writeln!(self.buffer, "{}", text).expect("buffer overflow");
                     }
                 }
                 State::Title => {
@@ -142,6 +142,7 @@ impl<'a> HtmlWalker<'a> {
                 State::Pre => {
                     write!(self.buffer, "{}", contents.borrow()).expect("buffer overflow")
                 }
+                State::Search => {}
                 _ => write!(self.buffer, "{}", contents.borrow().replace('\n', " "))
                     .expect("buffer overflow"),
             },
@@ -166,12 +167,8 @@ impl<'a> HtmlWalker<'a> {
         if self.ignore_elements.contains(name) {
             return;
         }
-        if self.is_article(name, attrs) {
-            self.found_article = true;
-            self.walk_children(node, state);
-            self.found_article = false;
-        } else if self.found_article {
-            match name {
+        match state {
+            State::Article => match name {
                 "p" => self.print_element(node, State::P),
                 "br" => writeln!(self.buffer).expect("buffer overflow"),
                 "pre" => {
@@ -196,12 +193,22 @@ impl<'a> HtmlWalker<'a> {
                 "table" => self.print_table(node),
                 _ if name.starts_with('h') && name.len() == 2 => self.print_element(node, State::P),
                 _ => self.walk_children(node, state),
+            },
+            State::Search => {
+                if self.found_article {
+                    return;
+                }
+                else if self.is_article(name, attrs) {
+                    self.found_article = true;
+                    self.walk_children(node, State::Article);
+                } else {
+                    match name {
+                        "title" => self.walk_children(node, State::Title),
+                        _ => self.walk_children(node, state),
+                    }
+                }
             }
-        } else {
-            match name {
-                "title" => self.walk_children(node, State::Title),
-                _ => self.walk_children(node, state),
-            }
+            _ => {}
         }
     }
     fn is_article(&mut self, name: &str, attrs: &RefCell<Vec<html5ever::Attribute>>) -> bool {
