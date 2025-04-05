@@ -197,8 +197,7 @@ impl<'a> HtmlWalker<'a> {
             State::Search => {
                 if self.found_article {
                     return;
-                }
-                else if self.is_article(name, attrs) {
+                } else if self.is_article(name, attrs) {
                     self.found_article = true;
                     self.walk_children(node, State::Article);
                 } else {

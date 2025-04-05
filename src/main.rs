@@ -81,7 +81,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             String::from("/tmp/") + &walker.title + ".txt"
         };
-        fs::write(&filename, strip_trailing_newline(&buffer)).expect(format!("Unable to write file '{}'", &filename).as_str());
+        fs::write(&filename, strip_trailing_newline(&buffer))
+            .expect(format!("Unable to write file '{}'", &filename).as_str());
     } else {
         println!("{}", strip_trailing_newline(&buffer));
     }
