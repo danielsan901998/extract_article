@@ -89,9 +89,6 @@ enum State {
     Article,
     Title,
     Pre,
-    Ol,
-    Ul,
-    Table,
 }
 
 impl<'a> HtmlWalker<'a> {
@@ -127,10 +124,9 @@ impl<'a> HtmlWalker<'a> {
             NodeData::Document => self.walk_children(node, e),
             NodeData::Text { ref contents } => match e {
                 State::Article => {
-                    let text = contents.borrow().replace('\n', "");
-                    let text = text.trim();
-                    if !text.is_empty() {
-                        writeln!(self.buffer, "{}", text).expect("buffer overflow");
+                    let text = contents.borrow().replace('\n', " ");
+                    if !text.trim().is_empty() {
+                        write!(self.buffer, "{}", text).expect("buffer overflow");
                     }
                 }
                 State::Title => {
@@ -142,8 +138,6 @@ impl<'a> HtmlWalker<'a> {
                     write!(self.buffer, "{}", contents.borrow()).expect("buffer overflow")
                 }
                 State::Search => {}
-                _ => write!(self.buffer, "{}", contents.borrow().replace('\n', " "))
-                    .expect("buffer overflow"),
             },
             NodeData::Element {
                 ref name,
@@ -168,8 +162,11 @@ impl<'a> HtmlWalker<'a> {
         }
         match state {
             State::Article => match name {
-                "p" => self.print_element(node, state),
-                "br" => writeln!(self.buffer, "").expect("buffer overflow"),
+                "p" => {
+                    self.walk_children(node, state);
+                    writeln!(self.buffer).expect("buffer overflow");
+                }
+                "br" => writeln!(self.buffer).expect("buffer overflow"),
                 "pre" => {
                     self.print_pre(node);
                     writeln!(self.buffer).expect("buffer overflow");
@@ -190,7 +187,7 @@ impl<'a> HtmlWalker<'a> {
                 }
                 "ul" => self.print_ul(node),
                 "table" => self.print_table(node),
-                _ if name.starts_with('h') && name.len() == 2 => self.print_element(node, state),
+                _ if name.starts_with('h') && name.len() == 2 => self.walk_children(node, state),
                 _ => self.walk_children(node, state),
             },
             State::Search => {
@@ -216,30 +213,7 @@ impl<'a> HtmlWalker<'a> {
             SimpleSelector::Tag(ref e) => name == e,
         }
     }
-    fn print_text(&mut self, handle: &Handle, e: State) {
-        for child in handle.children.borrow().iter() {
-            match child.data {
-                NodeData::Text { ref contents } => {
-                    write!(self.buffer, "{}", contents.borrow().replace('\n', " "))
-                        .expect("buffer overflow");
-                }
 
-                NodeData::Element {
-                    ref name,
-                    ref attrs,
-                    ..
-                } => {
-                    let name = std::str::from_utf8(name.local.as_bytes()).unwrap();
-                    self.handle_element(name, attrs, child, e);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn print_element(&mut self, handle: &Handle, e: State) {
-        self.print_text(handle, e);
-    }
     fn print_pre(&mut self, handle: &Handle) {
         for child in handle.children.borrow().iter() {
             match child.data {
@@ -265,10 +239,10 @@ impl<'a> HtmlWalker<'a> {
                 let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
                 if string == "tr" {
                     self.print_table(child);
-                    writeln!(self.buffer, "").expect("buffer overflow");
+                    writeln!(self.buffer).expect("buffer overflow");
                 } else if string == "th" || string == "td" {
                     write!(self.buffer, "\t").expect("buffer overflow");
-                    self.print_text(child, State::Table);
+                    self.walk_children(child, State::Article);
                 } else {
                     self.print_table(child);
                 }
@@ -281,7 +255,8 @@ impl<'a> HtmlWalker<'a> {
                 let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
                 if string == "li" {
                     write!(self.buffer, "• ").expect("buffer overflow");
-                    self.print_element(child, State::Ul);
+                    self.walk_children(child, State::Article);
+                    writeln!(self.buffer).expect("buffer overflow");
                 }
             }
         }
@@ -293,7 +268,8 @@ impl<'a> HtmlWalker<'a> {
                 let string = std::str::from_utf8(name.local.as_bytes()).unwrap();
                 if string == "li" {
                     write!(self.buffer, "{}. ", pos).expect("buffer overflow");
-                    self.print_element(child, State::Ol);
+                    self.walk_children(child, State::Article);
+                    writeln!(self.buffer).expect("buffer overflow");
                     if reversed {
                         pos -= 1;
                     } else {
