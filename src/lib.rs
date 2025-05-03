@@ -187,7 +187,10 @@ impl<'a> HtmlWalker<'a> {
                 }
                 "ul" => self.print_ul(node),
                 "table" => self.print_table(node),
-                _ if name.starts_with('h') && name.len() == 2 => self.walk_children(node, state),
+                _ if name.starts_with('h') && name.len() == 2 => {
+                    self.walk_children(node, state);
+                    writeln!(self.buffer).expect("buffer overflow");
+                }
                 _ => self.walk_children(node, state),
             },
             State::Search => {
