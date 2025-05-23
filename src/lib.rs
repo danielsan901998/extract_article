@@ -186,6 +186,7 @@ impl<'a> HtmlWalker<'a> {
                     self.print_ol(node, start, reversed);
                 }
                 "ul" => self.print_ul(node),
+                "img" => self.find_and_print_alt_attr(attrs),
                 "table" => self.print_table(node),
                 _ if name.starts_with('h') && name.len() == 2 => {
                     self.walk_children(node, state);
@@ -209,7 +210,19 @@ impl<'a> HtmlWalker<'a> {
             _ => self.walk_children(node, state),
         }
     }
-    fn is_article(&mut self, name: &str, attrs: &RefCell<Vec<html5ever::Attribute>>) -> bool {
+
+    fn find_and_print_alt_attr(&mut self, attrs: &RefCell<Vec<html5ever::Attribute>>) {
+        attrs.borrow().iter().for_each(|attr| {
+            if let Ok(name) = std::str::from_utf8(attr.name.local.as_bytes()) {
+                if name == "alt" {
+                    if let Ok(value) = std::str::from_utf8(attr.value.as_bytes()) {
+                        write!(self.buffer, "{}", value).expect("buffer overflow");
+                    }
+                }
+            }
+        });
+    }
+    fn is_article(&self, name: &str, attrs: &RefCell<Vec<html5ever::Attribute>>) -> bool {
         match self.selector {
             SimpleSelector::Id(ref e) => find_attr(attrs, "id", e),
             SimpleSelector::Class(ref e) => find_attr(attrs, "class", e),
