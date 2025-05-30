@@ -199,7 +199,7 @@ impl<'a> HtmlWalker<'a> {
                     return;
                 } else if self.is_article(name, attrs) {
                     self.found_article = true;
-                    self.walk_children(node, State::Article);
+                    self.handle_element(name, attrs, node, State::Article);
                 } else {
                     match name {
                         "title" => self.walk_children(node, State::Title),
